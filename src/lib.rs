@@ -1,18 +1,20 @@
-// use core::arch::asm;
+use core::cell::Cell;
 use core::marker::Sized;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
+use std::sync::Mutex;
 
 struct SpinMutex<T: ?Sized> {
 	lock_atomic: AtomicBool,
-	pub value: T,
+	value: Cell<T>,
 }
+unsafe impl<T> Sync for SpinMutex<T> {} // 안전한가?
 
 impl<T> SpinMutex<T> {
 	const fn new(value: T) -> Self {
 		SpinMutex {
 			lock_atomic: AtomicBool::new(false),
-			value,
+			value: Cell::new(value),
 		}
 	}
 
@@ -23,26 +25,24 @@ impl<T> SpinMutex<T> {
 		{}
 	}
 
-	fn unlock(&mut self) {
+	fn unlock(&self) {
 		self.lock_atomic.store(false, Ordering::Relaxed);
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	static mut sum: SpinMutex<usize> = SpinMutex::new(0);
+	static sum: SpinMutex<usize> = SpinMutex::new(0);
 	use super::*;
 
 	fn func() {
 		for _ in 0..100000 {
-			unsafe {
-				sum.lock();
-				sum.value += 1;
-				sum.unlock();
-			}
+			sum.lock();
+			sum.value.set(sum.value.get() + 1);
+			sum.unlock();
 		}
 
-		unsafe { println!("{}", sum.value) };
+		println!("{}", sum.value.get());
 	}
 
 	#[test]
