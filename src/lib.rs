@@ -1,44 +1,30 @@
-use core::arch::asm;
+// use core::arch::asm;
 use core::marker::Sized;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
 
 struct SpinMutex<T: ?Sized> {
-	lock_atomic: usize,
+	lock_atomic: AtomicBool,
 	pub value: T,
 }
 
 impl<T> SpinMutex<T> {
 	const fn new(value: T) -> Self {
 		SpinMutex {
-			lock_atomic: 0,
+			lock_atomic: AtomicBool::new(false),
 			value,
 		}
 	}
 
 	fn lock(&self) {
-		while unsafe { self.cmpxchg() } {}
+		while let Err(_) =
+			self.lock_atomic
+				.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+		{}
 	}
 
 	fn unlock(&mut self) {
-		self.lock_atomic = 0;
-	}
-
-	/// cmpxchg [m1], r1, al
-	/// if [m1] == al {
-	///     [m1] = r1;
-	/// } else {
-	///     al = [m1];
-	/// }
-	unsafe fn cmpxchg(&self) -> bool {
-		let mut al: i8 = 0;
-		let cl: i8 = 1;
-		let rdi = &self.lock_atomic as *const usize;
-		asm!(
-			"lock cmpxchg [rdi], cl",
-			in ("rdi") rdi,
-			in ("cl") cl,
-			inout ("al") al,
-		);
-		al == 1
+		self.lock_atomic.store(false, Ordering::Relaxed);
 	}
 }
 
