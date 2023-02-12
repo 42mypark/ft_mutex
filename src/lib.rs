@@ -1,28 +1,34 @@
 use core::arch::asm;
 
-static mut LOCK_ATOMIC: usize = 1;
+static mut LOCK_ATOMIC: usize = 0;
 static mut sum: usize = 0;
 
-fn lock() {
-	unsafe {
-		let mut al: i8 = 0;
-		let cl: i8 = 0;
-		let mut rdi = &LOCK_ATOMIC as *const usize;
+/// cmpxchg [m1], r1, al
+/// if [m1] == al {
+///     [m1] = r1;
+/// } else {
+///     al = [m1];
+/// }
 
-		while al == 0 {
-			al = 1;
-			asm!(
-				"lock cmpxchg [rdi], cl",
-				inout ("rdi") rdi,
-				in ("cl") cl,
-				inout ("al") al,
-			)
-		}
-	}
+fn lock() {
+	while unsafe { cmpxchg() } {}
 }
 
 fn unlock() {
-	unsafe { LOCK_ATOMIC = 1 }
+	unsafe { LOCK_ATOMIC = 0 }
+}
+
+unsafe fn cmpxchg() -> bool {
+	let mut al: i8 = 0;
+	let cl: i8 = 1;
+	let rdi = &LOCK_ATOMIC as *const usize;
+	asm!(
+		"lock cmpxchg [rdi], cl",
+		in ("rdi") rdi,
+		in ("cl") cl,
+		inout ("al") al,
+	);
+	al == 1
 }
 
 fn func() {
